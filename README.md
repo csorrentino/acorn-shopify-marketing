@@ -29,32 +29,29 @@ Create a custom app in your Shopify Partner dashboard with these scopes:
 - **Admin API:** `write_customers`, `read_customers`
 - **Storefront API:** `unauthenticated_write_customers`, `unauthenticated_read_customers`
 
-Set the callback URL to `https://your-site.test/shopify/auth/callback`.
+Set the callback URL to `https://your-site.test/shopify/marketing/callback`.
 
 ### 3. Routing
 
-Add route registration to `functions.php` (or wherever you configure Acorn):
+Routes are registered automatically by the service provider when `oauth_enabled` is `true` (the default). No manual configuration is needed.
 
-```php
-Application::configure()
-    ->withProviders([...])
-    ->withRouting(
-        web: base_path('routes/web.php'),
-    )
-    ->boot();
+To change the default route paths, publish the config and update the `routes` keys:
+
+```bash
+wp acorn vendor:publish --tag=shopify-marketing-config
 ```
 
-If you don't have a `routes/web.php` yet, create it and require the package routes:
-
 ```php
-<?php
-// routes/web.php
-require base_path('vendor/csorrentino/acorn-shopify-marketing/routes/web.php');
+// config/shopify-marketing.php
+'routes' => [
+    'redirect' => '/shopify/marketing/connect',
+    'callback' => '/shopify/marketing/callback',
+],
 ```
 
 ### 4. Connect Shopify
 
-Visit `/shopify/auth/redirect` in your browser. You'll be redirected to Shopify to authorize the app. After authorization:
+Visit Settings → Shopify Marketing in the WordPress admin, or go to `/shopify/marketing/connect` directly. You'll be redirected to Shopify to authorize the app. After authorization:
 
 - An Admin API token is stored in `wp_options` (`shopify_admin_access_token`)
 - A Storefront API token is created and stored (`shopify_storefront_access_token`)
@@ -65,37 +62,37 @@ Visit `/shopify/auth/redirect` in your browser. You'll be redirected to Shopify 
 
 If using [Log1x/sage-html-forms](https://github.com/Log1x/sage-html-forms):
 
-1. Create a form in **WordPress admin → HTML Forms → Add New**
-2. Give it the slug `newsletter` (or customize via `config('shopify-marketing.html_forms_slug')`)
-3. Add an email field with `name="email"`
-4. Render the form anywhere with the included Blade view:
+1. Copy `examples/resources/views/forms/newsletter-html-forms-example.blade.php` to `resources/views/forms/newsletter.blade.php`
+2. Create a form in **WordPress admin → HTML Forms → Add New**
+3. Give it the slug `newsletter` (or customize via `config('shopify-marketing.html_forms_slug')`)
+4. Add an email field with `name="email"`
+5. Include the form in your layout:
 
 ```blade
-@include('shopify-marketing::examples.newsletter-html-forms', ['form' => 'newsletter'])
+@include('forms.newsletter', ['form' => 'newsletter'])
 ```
 
 When the form is submitted, the package hooks into `hf_process_form` and sends the email to Shopify via the Storefront API. The form still goes through all of HTML Forms' normal validation, spam protection, and submission logging.
 
 ### Option B: Alpine.js
 
-For Alpine.js-based forms (no additional dependencies), include the example view:
+For Alpine.js-based forms (no additional dependencies):
+
+1. Copy `examples/resources/views/forms/newsletter-alpine-example.blade.php` to `resources/views/forms/newsletter.blade.php`
+2. Include it in your layout:
 
 ```blade
-@include('shopify-marketing::examples.newsletter-alpine')
+@include('forms.newsletter')
 ```
 
-The Alpine view POSTs directly to the REST endpoint. Publish the views to customize them:
-
-```bash
-wp acorn vendor:publish --tag=shopify-marketing-views
-```
+The Alpine view POSTs directly to the REST endpoint.
 
 ### REST Endpoint (manual)
 
-Submit email signups to `POST /wp-json/shopify-marketing/v1/newsletter`:
+The endpoint URL is built from `rest_namespace` and `rest_route` in your config. With defaults it resolves to `POST /wp-json/shopify-marketing/v1/newsletter`:
 
 ```javascript
-fetch('/wp-json/shopify-marketing/v1/newsletter', {
+fetch(wpApiSettings.root + 'shopify-marketing/v1/newsletter', {
     method: 'POST',
     headers: {
         'Content-Type': 'application/json',

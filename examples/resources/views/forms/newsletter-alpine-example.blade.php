@@ -1,9 +1,9 @@
 {{--
-  Alpine.js newsletter signup form.
-  Uses the REST endpoint registered by this package.
+  Alpine.js newsletter signup form example.
+  Copy to: resources/views/forms/newsletter.blade.php
 
-  Usage: @include('shopify-marketing::examples.newsletter-alpine')
-  Or publish with: wp acorn vendor:publish --tag=shopify-marketing-views
+  Requires Alpine.js on the page and the plugin's REST endpoint active.
+  This view POSTs to the configured REST endpoint with a nonce.
 --}}
 
 <div
@@ -18,7 +18,7 @@
             this.success = false;
 
             try {
-                const res = await fetch('/wp-json/{{ config('shopify-marketing.rest_namespace') }}/newsletter', {
+                const res = await fetch('{{ rest_url(config('shopify-marketing.rest_namespace') . config('shopify-marketing.rest_route')) }}', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

@@ -35,11 +35,10 @@ class ShopifyMarketingServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->loadViewsFrom(__DIR__ . '/../../resources/views', 'shopify-marketing');
-
         $this->bootHtmlFormsIntegration();
 
         if (config('shopify-marketing.oauth_enabled')) {
+            $this->loadRoutesFrom(__DIR__ . '/../../routes/shopify-marketing.php');
             new OptionsPage()->register();
         }
 
@@ -49,7 +48,9 @@ class ShopifyMarketingServiceProvider extends ServiceProvider
             ], 'shopify-marketing-config');
 
             $this->publishes([
-                __DIR__ . '/../../resources/views/examples' => resource_path('views/vendor/shopify-marketing/examples'),
+                __DIR__ . '/../../examples/resources/views/forms' => resource_path(
+                    'views/vendor/shopify-marketing/examples',
+                ),
             ], 'shopify-marketing-views');
         }
     }

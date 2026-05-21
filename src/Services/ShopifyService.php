@@ -53,18 +53,25 @@ class ShopifyService
             abort(403, 'Invalid OAuth state.');
         }
 
-        $query = $request->getQueryString();
-        $hmacParam = $request->input('hmac');
-        $queryWithoutHmac = preg_replace('/&hmac=' . preg_quote($hmacParam, '/') . '/', '', "&{$query}");
-        $queryWithoutHmac = trim($queryWithoutHmac, '&');
+        $shop = $request->input('shop');
 
-        $computedHmac = hash_hmac('sha256', $queryWithoutHmac, env('SHOPIFY_API_SECRET'));
+        if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9\-]*\.myshopify\.com$/', $shop)) {
+            abort(403, 'Invalid shop domain.');
+        }
+
+        $hmacParam = $request->input('hmac');
+
+        parse_str($request->getQueryString(), $params);
+        unset($params['hmac']);
+        ksort($params);
+
+        $canonicalQuery = http_build_query($params);
+        $computedHmac = hash_hmac('sha256', $canonicalQuery, env('SHOPIFY_API_SECRET'));
 
         if (!hash_equals($computedHmac, $hmacParam)) {
             abort(403, 'Invalid HMAC signature.');
         }
 
-        $shop = $request->input('shop');
         $code = $request->input('code');
 
         $adminToken = $this->exchangeCodeForAdminToken($shop, $code);

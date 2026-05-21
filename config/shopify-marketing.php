@@ -5,8 +5,8 @@ return [
     'admin_scopes' => 'write_customers,read_customers',
     'oauth_enabled' => true,
     'routes' => [
-        'redirect' => '/shopify/auth/redirect',
-        'callback' => '/shopify/auth/callback',
+        'redirect' => '/shopify/marketing/connect',
+        'callback' => '/shopify/marketing/callback',
     ],
     'rest_namespace' => 'shopify-marketing/v1',
     'rest_route' => '/newsletter',

@@ -1,8 +1,6 @@
 [source]
-paths = ["src/", "routes/", "config/"]
-excludes = [
-    "resources/views/**",
-]
+paths = ["src/", "config/"]
+excludes = []
 
 [formatter]
 print-width = 120
