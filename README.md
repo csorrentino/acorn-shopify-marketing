@@ -2,6 +2,13 @@
 
 Connect your WordPress frontend to Shopify's email marketing tools. This [Roots/acorn](https://github.com/roots/acorn) package lets you embed newsletter signup forms on your WordPress site that sync subscribers directly into Shopify's customer and list management — useful for setups where the Shopify store runs on a subdomain of the main WP site (e.g. `shop.yourdomain.com`). Supports [Log1x/sage-html-forms](https://github.com/Log1x/sage-html-forms) server-side or any custom form via a REST endpoint, and handles OAuth and Storefront token management automatically.
 
+## Requirements
+
+- PHP 8.2+
+- [Roots/Acorn](https://github.com/roots/acorn) 6.x
+- A WordPress setup with `.env` support — [Roots/Bedrock](https://github.com/roots/bedrock) or equivalent
+- A Shopify custom app with Admin API and Storefront API access
+
 ## Installation
 
 ```bash
