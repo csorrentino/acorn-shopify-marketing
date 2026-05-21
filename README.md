@@ -1,6 +1,6 @@
 # Acorn Shopify Marketing
 
-Shopify OAuth and newsletter signup integration for Acorn projects.
+Shopify OAuth and newsletter signup integration for Acorn projects. Handles OAuth, auto-creates Storefront tokens, and sends email signups via GraphQL. Includes examples uring log1x/sage-html-forms or Alpine.js via a REST endpoint.
 
 ## Installation
 
@@ -62,7 +62,12 @@ Visit Settings → Shopify Marketing in the WordPress admin, or go to `/shopify/
 
 If using [Log1x/sage-html-forms](https://github.com/Log1x/sage-html-forms):
 
-1. Copy `examples/resources/views/forms/newsletter-html-forms-example.blade.php` to `resources/views/forms/newsletter.blade.php`
+1. Publish the example view:
+
+```bash
+wp acorn vendor:publish --tag=shopify-marketing-views-htmlforms
+```
+
 2. Create a form in **WordPress admin → HTML Forms → Add New**
 3. Give it the slug `newsletter` (or customize via `config('shopify-marketing.html_forms_slug')`)
 4. Add an email field with `name="email"`
@@ -78,7 +83,12 @@ When the form is submitted, the package hooks into `hf_process_form` and sends t
 
 For Alpine.js-based forms (no additional dependencies):
 
-1. Copy `examples/resources/views/forms/newsletter-alpine-example.blade.php` to `resources/views/forms/newsletter.blade.php`
+1. Publish the example view:
+
+```bash
+wp acorn vendor:publish --tag=shopify-marketing-views-alpine
+```
+
 2. Include it in your layout:
 
 ```blade
@@ -129,7 +139,7 @@ If another package or custom code handles Shopify authentication (e.g., a genera
 ```
 
 When disabled:
-- The `/shopify/auth/redirect` and `/shopify/auth/callback` routes are not registered
+- The `/shopify/marketing/connect` and `/shopify/marketing/callback` routes are not registered
 - The admin options page (Settings → Shopify Marketing) is not registered
 - The disconnect REST endpoint is not registered
 

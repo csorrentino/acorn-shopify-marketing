@@ -48,10 +48,16 @@ class ShopifyMarketingServiceProvider extends ServiceProvider
             ], 'shopify-marketing-config');
 
             $this->publishes([
-                __DIR__ . '/../../examples/resources/views/forms' => resource_path(
-                    'views/vendor/shopify-marketing/examples',
+                __DIR__ . '/../../examples/resources/views/forms/newsletter-alpine-example.blade.php' => resource_path(
+                    'views/forms/newsletter.blade.php',
                 ),
-            ], 'shopify-marketing-views');
+            ], 'shopify-marketing-views-alpine');
+
+            $this->publishes([
+                __DIR__ . '/../../examples/resources/views/forms/newsletter-html-forms-example.blade.php' => resource_path(
+                    'views/forms/newsletter.blade.php',
+                ),
+            ], 'shopify-marketing-views-htmlforms');
         }
     }
 
