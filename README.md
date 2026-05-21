@@ -1,6 +1,6 @@
 # Acorn Shopify Marketing
 
-Shopify OAuth and newsletter signup integration for Acorn projects. Handles OAuth, auto-creates Storefront tokens, and sends email signups via GraphQL. Includes examples uring log1x/sage-html-forms or Alpine.js via a REST endpoint.
+Connect your WordPress frontend to Shopify's email marketing tools. This [Roots/acorn](https://github.com/roots/acorn) package lets you embed newsletter signup forms on your WordPress site that sync subscribers directly into Shopify's customer and list management — useful for setups where the Shopify store runs on a subdomain of the main WP site (e.g. `shop.yourdomain.com`). Supports [Log1x/sage-html-forms](https://github.com/Log1x/sage-html-forms) server-side or any custom form via a REST endpoint, and handles OAuth and Storefront token management automatically.
 
 ## Installation
 
@@ -79,9 +79,11 @@ wp acorn vendor:publish --tag=shopify-marketing-views-htmlforms
 
 When the form is submitted, the package hooks into `hf_process_form` and sends the email to Shopify via the Storefront API. The form still goes through all of HTML Forms' normal validation, spam protection, and submission logging.
 
-### Option B: Alpine.js
+### Option B: Custom form via REST endpoint
 
-For Alpine.js-based forms (no additional dependencies):
+Any form that can make a `POST` request works — Alpine.js, vanilla JS, React, or anything else. The package exposes a REST endpoint that accepts an email and sends it to Shopify.
+
+An Alpine.js example view is included. To use it as a starting point:
 
 1. Publish the example view:
 
@@ -95,7 +97,7 @@ wp acorn vendor:publish --tag=shopify-marketing-views-alpine
 @include('forms.newsletter')
 ```
 
-The Alpine view POSTs directly to the REST endpoint.
+Or build your own form and POST to the endpoint directly — see the REST Endpoint section below.
 
 ### REST Endpoint (manual)
 
