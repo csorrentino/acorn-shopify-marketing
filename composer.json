@@ -1,36 +1,30 @@
 {
-  "name": "vendor-name/example-package",
+  "name": "csorrentino/acorn-shopify-marketing",
   "type": "package",
-  "description": "An example package for Roots Acorn.",
+  "description": "Shopify OAuth and marketing signup for Acorn projects.",
   "license": "MIT",
   "authors": [
     {
-      "name": "Brandon Nifong",
-      "email": "brandon@tendency.me"
+      "name": "Stay Fresh",
+      "email": "info@csorrentino.design"
     }
   ],
   "autoload": {
     "psr-4": {
-      "VendorName\\ExamplePackage\\": "src/"
+      "Csorrentino\\ShopifyMarketing\\": "src/"
     }
   },
   "require": {
-    "php": "^8.3"
+    "php": "^8.2"
   },
-  "scripts": {
-    "test:configure": "@php tests/smoke/configure_smoke.php"
+  "require-dev": {
+    "laravel/pint": "^1.29"
   },
   "extra": {
     "acorn": {
       "providers": [
-        "VendorName\\ExamplePackage\\Providers\\ExampleServiceProvider"
-      ],
-      "aliases": {
-        "Example": "VendorName\\ExamplePackage\\Facades\\Example"
-      }
+        "Csorrentino\\ShopifyMarketing\\Providers\\ShopifyMarketingServiceProvider"
+      ]
     }
-  },
-  "require-dev": {
-    "laravel/pint": "^1.29"
   }
 }

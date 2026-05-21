@@ -1,0 +1,32 @@
+[source]
+paths = ["src/", "routes/", "config/"]
+excludes = [
+    "resources/views/**",
+]
+
+[formatter]
+print-width = 120
+null-type-hint = "question"
+sort-uses = true
+
+[linter]
+
+[linter.rules]
+literal-named-argument = { enabled = false }
+no-else-clause = { enabled = false }
+no-assign-in-condition = { enabled = false }
+no-global = { enabled = false }
+no-literal-password = { enabled = false }
+no-empty-comment = { enabled = false }
+no-empty = { enabled = false }
+no-eval = { enabled = true }
+no-multi-assignments = { enabled = false }
+no-redundant-parentheses = { enabled = true }
+no-redundant-use = { enabled = true }
+no-shorthand-ternary = { enabled = false }
+strict-types = { enabled = false }
+too-many-methods = { threshold = 20 }
+return-type = { enabled = false }
+prefer-arrow-function = { enabled = false }
+parameter-type = { enabled = false }
+cyclomatic-complexity = { threshold = 20 }
