@@ -8,7 +8,8 @@ class ShopifyService
 {
     public static function isConnected(): bool
     {
-        return !empty(get_option('shopify_storefront_access_token'));
+        return !empty(get_option('shopify_admin_access_token'))
+            || !empty(get_option('shopify_storefront_access_token'));
     }
 
     public static function getStoreDomain(): string
@@ -98,11 +99,13 @@ class ShopifyService
         return redirect(home_url('/wp-admin/options-general.php?page=shopify-marketing&connected=1'));
     }
 
-    public function createCustomer(string $email): array
+    public function createCustomer(string $email, array $data = []): array
     {
-        $token = get_option('shopify_storefront_access_token');
+        $adminToken = get_option('shopify_admin_access_token');
+        $storefrontToken = get_option('shopify_storefront_access_token');
 
-        if (!$token) {
+        if (!$adminToken && !$storefrontToken) {
+            error_log('[shopify-marketing] No access token found in wp_options.');
             return [
                 'success' => false,
                 'message' => 'There was an error submitting the form.',
@@ -111,6 +114,30 @@ class ShopifyService
 
         $domain = self::getStoreDomain();
         $apiVersion = config('shopify-marketing.api_version');
+
+        $token = $storefrontToken ?: $adminToken;
+        $result = $this->createCustomerViaStorefrontGraphQL($email, $data, $domain, $apiVersion, $token);
+
+        if (!$result['success']) {
+            return $result;
+        }
+
+        if ($adminToken) {
+            $tags = array_merge(
+                config('shopify-marketing.tags', []),
+                apply_filters('shopify_marketing_customer_tags', $data['tags'] ?? []),
+            );
+
+            if (!empty($tags)) {
+                $this->addCustomerTags($result['customerId'], $tags, $domain, $apiVersion, $adminToken);
+            }
+        }
+
+        return $result;
+    }
+
+    private function createCustomerViaStorefrontGraphQL(string $email, array $data, string $domain, string $apiVersion, string $token): array
+    {
         $endpoint = "https://{$domain}/api/{$apiVersion}/graphql.json";
 
         $mutation = <<<'GRAPHQL'
@@ -122,6 +149,24 @@ class ShopifyService
         }
         GRAPHQL;
 
+        $input = [
+            'email' => $email,
+            'password' => wp_generate_password(32),
+            'acceptsMarketing' => true,
+        ];
+
+        if (!empty($data['firstName'])) {
+            $input['firstName'] = $data['firstName'];
+        }
+
+        if (!empty($data['lastName'])) {
+            $input['lastName'] = $data['lastName'];
+        }
+
+        if (!empty($data['phone'])) {
+            $input['phone'] = $data['phone'];
+        }
+
         $response = wp_remote_post($endpoint, [
             'headers' => [
                 'X-Shopify-Storefront-Access-Token' => $token,
@@ -130,17 +175,14 @@ class ShopifyService
             'body' => json_encode([
                 'query' => $mutation,
                 'variables' => [
-                    'input' => [
-                        'email' => $email,
-                        'password' => wp_generate_password(32),
-                        'acceptsMarketing' => true,
-                    ],
+                    'input' => $input,
                 ],
             ]),
             'timeout' => 15,
         ]);
 
         if (is_wp_error($response)) {
+            error_log('[shopify-marketing] Storefront GraphQL create failed: ' . $response->get_error_message());
             return [
                 'success' => false,
                 'message' => 'There was an error submitting the form.',
@@ -150,6 +192,7 @@ class ShopifyService
         $body = json_decode(wp_remote_retrieve_body($response), true);
 
         if (!empty($body['errors'])) {
+            error_log('[shopify-marketing] Storefront GraphQL errors: ' . json_encode($this->sanitizeErrorPayload($body['errors'])));
             return [
                 'success' => false,
                 'message' => 'There was an error submitting the form.',
@@ -157,6 +200,7 @@ class ShopifyService
         }
 
         if (!empty($body['data']['customerCreate']['customerUserErrors'])) {
+            error_log('[shopify-marketing] customerCreate user errors: ' . json_encode($body['data']['customerCreate']['customerUserErrors']));
             return [
                 'success' => false,
                 'message' => 'There was an error submitting the form.',
@@ -166,7 +210,85 @@ class ShopifyService
         return [
             'success' => true,
             'message' => "You're on the list! Thanks for signing up.",
+            'customerId' => $body['data']['customerCreate']['customer']['id'] ?? null,
         ];
+    }
+
+    private function addCustomerTags(string $customerGid, array $tags, string $domain, string $apiVersion, string $adminToken): void
+    {
+        $mutation = <<<'GRAPHQL'
+        mutation customerUpdate($input: CustomerInput!) {
+            customerUpdate(input: $input) {
+                customer { id tags }
+                userErrors { field message }
+            }
+        }
+        GRAPHQL;
+
+        $response = wp_remote_post("https://{$domain}/admin/api/{$apiVersion}/graphql.json", [
+            'headers' => [
+                'X-Shopify-Access-Token' => $adminToken,
+                'Content-Type' => 'application/json',
+            ],
+            'body' => json_encode([
+                'query' => $mutation,
+                'variables' => [
+                    'input' => [
+                        'id' => $customerGid,
+                        'tags' => $tags,
+                    ],
+                ],
+            ]),
+            'timeout' => 15,
+        ]);
+
+        if (is_wp_error($response)) {
+            error_log('[shopify-marketing] Tag update failed: ' . $response->get_error_message());
+            return;
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if (!empty($body['data']['customerUpdate']['userErrors'])) {
+            error_log('[shopify-marketing] Tag update user errors: ' . json_encode($body['data']['customerUpdate']['userErrors']));
+        }
+    }
+
+    private function sanitizeErrorPayload(array $errorData): array
+    {
+        return array_map(function ($entry) {
+            if (isset($entry['extensions']['value'])) {
+                $value = &$entry['extensions']['value'];
+
+                if (isset($value['email'])) {
+                    $value['email'] = $this->obfuscateEmail($value['email']);
+                }
+
+                if (isset($value['password'])) {
+                    $value['password'] = '[redacted]';
+                }
+            }
+
+            return $entry;
+        }, $errorData);
+    }
+
+    private function obfuscateEmail(string $email): string
+    {
+        $parts = explode('@', $email);
+
+        if (count($parts) !== 2) {
+            return '[redacted]';
+        }
+
+        $name = $parts[0];
+        $domain = $parts[1];
+
+        if (strlen($name) <= 2) {
+            return substr($name, 0, 1) . '*@' . $domain;
+        }
+
+        return substr($name, 0, 2) . str_repeat('*', max(strlen($name) - 4, 1)) . substr($name, -2) . '@' . $domain;
     }
 
     private function exchangeCodeForAdminToken(string $shop, string $code): ?string

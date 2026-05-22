@@ -4,11 +4,17 @@
 
   Requires Alpine.js on the page and the plugin's REST endpoint active.
   This view POSTs to the configured REST endpoint with a nonce.
+
+  Uncomment the fields below to send firstName, lastName, and phone to
+  Shopify alongside the email address. All are optional.
 --}}
 
 <div
     x-data="{
         email: '',
+        firstName: '',
+        lastName: '',
+        phone: '',
         loading: false,
         success: false,
         error: '',
@@ -24,7 +30,12 @@
                         'Content-Type': 'application/json',
                         'X-WP-Nonce': '{{ wp_create_nonce('wp_rest') }}',
                     },
-                    body: JSON.stringify({ email: this.email }),
+                    body: JSON.stringify({
+                        email: this.email,
+                        firstName: this.firstName || undefined,
+                        lastName: this.lastName || undefined,
+                        phone: this.phone || undefined,
+                    }),
                 });
 
                 const data = await res.json();
@@ -32,6 +43,9 @@
                 if (data.success) {
                     this.success = true;
                     this.email = '';
+                    this.firstName = '';
+                    this.lastName = '';
+                    this.phone = '';
                 } else {
                     this.error = data.message || 'Something went wrong.';
                 }
@@ -45,6 +59,13 @@
     x-cloak
 >
     <form @submit.prevent="submitForm">
+
+        {{-- Uncomment to collect first name --}}
+        {{-- <input type="text" x-model="firstName" placeholder="{{ __('First name', 'shopify-marketing') }}"> --}}
+
+        {{-- Uncomment to collect last name --}}
+        {{-- <input type="text" x-model="lastName" placeholder="{{ __('Last name', 'shopify-marketing') }}"> --}}
+
         <input
             type="email"
             x-model="email"
@@ -52,6 +73,9 @@
             required
             :disabled="loading"
         >
+
+        {{-- Uncomment to collect phone (E.164 format recommended) --}}
+        {{-- <input type="tel" x-model="phone" placeholder="{{ __('Phone', 'shopify-marketing') }}"> --}}
 
         <button
             type="submit"

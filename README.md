@@ -33,10 +33,18 @@ SHOPIFY_STORE_DOMAIN="your-store.myshopify.com"
 
 Create a custom app in your Shopify Partner dashboard with these scopes:
 
-- **Admin API:** `write_customers`, `read_customers`
-- **Storefront API:** `unauthenticated_write_customers`, `unauthenticated_read_customers`
+- **Admin API:** `write_customers`, `read_customers` — required for OAuth, customer tags, and the disconnect REST endpoint
+- **Storefront API:** `unauthenticated_write_customers`, `unauthenticated_read_customers` — required for creating customers
 
 Set the callback URL to `https://your-site.test/shopify/marketing/callback`.
+
+#### How the two APIs are used
+
+**Storefront API** — Creates customers. This is the primary path for newsletter signups. It works without any protected data access approvals.
+
+**Admin API** — Adds tags to customers after creation. After the Storefront API creates the customer, the Admin API appends any tags from your config or the `shopify_marketing_customer_tags` filter. If only a Storefront token is available (no OAuth), tags are skipped and signups still work.
+
+Both tokens are obtained automatically during the OAuth flow. The admin options page shows which APIs are connected with green checkmarks or red crosses.
 
 ### 3. Routing
 
@@ -108,7 +116,11 @@ Or build your own form and POST to the endpoint directly — see the REST Endpoi
 
 ### REST Endpoint (manual)
 
-The endpoint URL is built from `rest_namespace` and `rest_route` in your config. With defaults it resolves to `POST /wp-json/shopify-marketing/v1/newsletter`:
+The endpoint URL is built from `rest_namespace` and `rest_route` in your config. With defaults it resolves to `POST /wp-json/shopify-marketing/v1/newsletter`.
+
+Only `email` is required. Optionally include `firstName`, `lastName`, and `phone` — they'll be forwarded to Shopify:
+
+
 
 ```javascript
 fetch(wpApiSettings.root + 'shopify-marketing/v1/newsletter', {
@@ -117,7 +129,12 @@ fetch(wpApiSettings.root + 'shopify-marketing/v1/newsletter', {
         'Content-Type': 'application/json',
         'X-WP-Nonce': wpApiSettings.nonce,
     },
-    body: JSON.stringify({ email: 'customer@example.com' }),
+    body: JSON.stringify({
+        email: 'customer@example.com',
+        firstName: 'Jane',
+        lastName: 'Doe',
+        phone: '+15555555555',
+    }),
 });
 ```
 
@@ -136,7 +153,28 @@ Options:
 - `oauth_enabled` — Enable/disable the built-in OAuth flow (default: `true`)
 - `routes.redirect` / `routes.callback` — OAuth route paths
 - `rest_namespace` / `rest_route` — REST API endpoint paths
+- `tags` — Array of tags to apply to every customer (default: `[]`)
 - `html_forms_slug` — Form slug to watch for HTML Forms integration
+
+### Customer Tags
+
+Set default tags in the config:
+
+```php
+// config/shopify-marketing.php
+'tags' => ['newsletter', 'site-subscriber'],
+```
+
+#### Dynamic tags via filter
+
+Use the `shopify_marketing_customer_tags` filter to add or remove tags based on conditions:
+
+```php
+add_filter('shopify_marketing_customer_tags', function (array $tags) {
+    $tags[] = 'site-subscriber';
+    return $tags;
+});
+```
 
 ## Disabling the OAuth Flow
 

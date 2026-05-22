@@ -10,5 +10,6 @@ return [
     ],
     'rest_namespace' => 'shopify-marketing/v1',
     'rest_route' => '/newsletter',
+    'tags' => [],
     'html_forms_slug' => 'newsletter',
 ];

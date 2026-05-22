@@ -26,6 +26,9 @@ class OptionsPage
         $authUrl = home_url(config('shopify-marketing.routes.redirect'));
         $restNamespace = config('shopify-marketing.rest_namespace');
 
+        $hasAdminToken = !empty(get_option('shopify_admin_access_token'));
+        $hasStorefrontToken = !empty(get_option('shopify_storefront_access_token'));
+
         ?>
         <div class="wrap">
             <h1>Shopify Marketing</h1>
@@ -35,6 +38,20 @@ class OptionsPage
                     <p><strong>Connected to Shopify</strong></p>
                     <p>Store: <code><?php echo esc_html($domain); ?></code></p>
                 </div>
+
+                <p>
+                    <?php if ($hasAdminToken): ?>
+                        <span style="color:#46b450;font-size:16px;">&#10003;</span> Admin API — customer tags supported<br>
+                    <?php else: ?>
+                        <span style="color:#dc3232;font-size:16px;">&#10007;</span> Admin API — not connected<br>
+                    <?php endif; ?>
+
+                    <?php if ($hasStorefrontToken): ?>
+                        <span style="color:#46b450;font-size:16px;">&#10003;</span> Storefront API — basic signups only<br>
+                    <?php else: ?>
+                        <span style="color:#dc3232;font-size:16px;">&#10007;</span> Storefront API — not connected<br>
+                    <?php endif; ?>
+                </p>
 
                 <p>Your store is connected and newsletter signups are ready.</p>
 

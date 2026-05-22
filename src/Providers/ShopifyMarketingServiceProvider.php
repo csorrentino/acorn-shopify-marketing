@@ -94,8 +94,25 @@ class ShopifyMarketingServiceProvider extends ServiceProvider
                     return;
                 }
 
+                $customerData = [];
+
+                $firstName = $data['firstName'] ?? $data['first_name'] ?? $data['FNAME'] ?? '';
+                if ($firstName && is_string($firstName)) {
+                    $customerData['firstName'] = sanitize_text_field($firstName);
+                }
+
+                $lastName = $data['lastName'] ?? $data['last_name'] ?? $data['LNAME'] ?? '';
+                if ($lastName && is_string($lastName)) {
+                    $customerData['lastName'] = sanitize_text_field($lastName);
+                }
+
+                $phone = $data['phone'] ?? $data['PHONE'] ?? '';
+                if ($phone && is_string($phone)) {
+                    $customerData['phone'] = sanitize_text_field($phone);
+                }
+
                 $shopify = $this->app->make(ShopifyService::class);
-                $shopify->createCustomer($email);
+                $shopify->createCustomer($email, $customerData);
             },
             10,
             2,
@@ -140,8 +157,34 @@ class ShopifyMarketingServiceProvider extends ServiceProvider
             ], 422);
         }
 
+        $data = [];
+
+        $firstName = $request->get_param('firstName');
+        if ($firstName && is_string($firstName)) {
+            $data['firstName'] = sanitize_text_field($firstName);
+        }
+
+        $lastName = $request->get_param('lastName');
+        if ($lastName && is_string($lastName)) {
+            $data['lastName'] = sanitize_text_field($lastName);
+        }
+
+        $phone = $request->get_param('phone');
+        if ($phone && is_string($phone)) {
+            $data['phone'] = sanitize_text_field($phone);
+        }
+
         $shopify = $this->app->make(ShopifyService::class);
-        $result = $shopify->createCustomer($email);
+
+        try {
+            $result = $shopify->createCustomer($email, $data);
+        } catch (\Throwable $e) {
+            error_log('[shopify-marketing] createCustomer exception: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'There was an error submitting the form.',
+            ], 422);
+        }
 
         if (!$result['success']) {
             return new WP_REST_Response([
