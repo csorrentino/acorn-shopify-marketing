@@ -230,7 +230,7 @@ class ShopifyMarketingServiceProvider extends ServiceProvider
         if (!$result['success']) {
             return new WP_REST_Response([
                 'success' => false,
-                'message' => 'There was an error submitting the form.',
+                'message' => $result['message'] ?? 'There was an error submitting the form.',
             ], 422);
         }
 

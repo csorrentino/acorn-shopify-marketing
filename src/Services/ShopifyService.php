@@ -149,8 +149,13 @@ class ShopifyService
     /**
      * Find or create the customer with the Admin API and subscribe them.
      *
-     * Returns null when the Admin API can't be used (request failed or access
-     * denied), so the caller can fall back to the Storefront API.
+     * Returns null when the Admin API can't be used (request failed, or Shopify
+     * returned errors before writing anything), so the caller can fall back to
+     * the Storefront API.
+     *
+     * Without protected customer data access, Shopify still runs these
+     * mutations but denies reading Customer fields. So mutations select only
+     * userErrors, and a denied lookup means the customer exists.
      */
     private function subscribeViaAdmin(string $email, array $data, array $tags, string $domain, string $apiVersion, string $adminToken): ?array
     {
@@ -166,6 +171,15 @@ class ShopifyService
             return null;
         }
 
+        if ($this->isAccessDenied($lookup)) {
+            // A match exists, but the app can't read or update it.
+            return $this->alreadyRegistered();
+        }
+
+        if (!empty($lookup['errors'])) {
+            return null;
+        }
+
         $customerId = $lookup['data']['customers']['edges'][0]['node']['id'] ?? null;
         $consent = [
             'marketingState' => 'SUBSCRIBED',
@@ -177,12 +191,12 @@ class ShopifyService
                 $domain,
                 $apiVersion,
                 $adminToken,
-                'mutation subscribe($input: CustomerEmailMarketingConsentUpdateInput!) { customerEmailMarketingConsentUpdate(input: $input) { customer { id } userErrors { field message } } }',
+                'mutation subscribe($input: CustomerEmailMarketingConsentUpdateInput!) { customerEmailMarketingConsentUpdate(input: $input) { userErrors { field message } } }',
                 ['input' => ['customerId' => $customerId, 'emailMarketingConsent' => $consent]],
             );
 
-            if ($update === null) {
-                return null;
+            if ($update === null || !empty($update['errors'])) {
+                return $this->failure();
             }
 
             if (!empty($update['data']['customerEmailMarketingConsentUpdate']['userErrors'])) {
@@ -213,27 +227,35 @@ class ShopifyService
             $domain,
             $apiVersion,
             $adminToken,
-            'mutation customerCreate($input: CustomerInput!) { customerCreate(input: $input) { customer { id } userErrors { field message } } }',
+            'mutation customerCreate($input: CustomerInput!) { customerCreate(input: $input) { userErrors { field message } } }',
             ['input' => $input],
         );
 
-        if ($create === null) {
+        if ($create === null || !empty($create['errors'])) {
             return null;
         }
 
-        if (!empty($create['data']['customerCreate']['userErrors'])) {
-            error_log('[shopify-marketing] Admin customerCreate user errors: ' . json_encode($create['data']['customerCreate']['userErrors']));
+        $userErrors = $create['data']['customerCreate']['userErrors'] ?? [];
+
+        if (!empty($userErrors)) {
+            error_log('[shopify-marketing] Admin customerCreate user errors: ' . json_encode($userErrors));
+
+            // The lookup can miss a customer created moments ago (search index lag).
+            if (in_array(['email'], array_column($userErrors, 'field'), true)) {
+                return $this->alreadyRegistered();
+            }
+
             return $this->failure();
         }
 
-        return $this->success($create['data']['customerCreate']['customer']['id'] ?? null);
+        return $this->success();
     }
 
     /**
      * Run an Admin API GraphQL request.
      *
-     * Returns the decoded body, or null when the request failed or Shopify
-     * returned top-level errors (for example ACCESS_DENIED).
+     * Returns the decoded body, including any top-level `errors` (logged here),
+     * or null when the request failed or returned no JSON.
      */
     private function adminGraphQL(string $domain, string $apiVersion, string $adminToken, string $query, array $variables): ?array
     {
@@ -242,7 +264,7 @@ class ShopifyService
                 'X-Shopify-Access-Token' => $adminToken,
                 'Content-Type' => 'application/json',
             ],
-            'body' => json_encode(['query' => $query, 'variables' => $variables]),
+            'body' => json_encode(['query' => $query, 'variables' => (object) $variables]),
             'timeout' => 15,
         ]);
 
@@ -259,11 +281,27 @@ class ShopifyService
         }
 
         if (!empty($body['errors'])) {
-            error_log('[shopify-marketing] Admin API errors (check the app has protected customer data access): ' . json_encode($this->sanitizeErrorPayload((array) $body['errors'])));
-            return null;
+            error_log('[shopify-marketing] Admin API errors: ' . json_encode($this->sanitizeErrorPayload((array) $body['errors'])));
         }
 
         return $body;
+    }
+
+    private function isAccessDenied(array $body): bool
+    {
+        foreach ((array) ($body['errors'] ?? []) as $error) {
+            if (($error['extensions']['code'] ?? '') === 'ACCESS_DENIED') {
+                error_log('[shopify-marketing] Shopify denied access to customer data. Request protected customer data access (email) for the app so existing customers can be subscribed.');
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function alreadyRegistered(): array
+    {
+        return $this->failure('This email is already registered with our store. Please contact us to update your subscription.');
     }
 
     private function success(?string $customerId = null): array
@@ -355,7 +393,7 @@ class ShopifyService
             $existing = array_intersect(['TAKEN', 'CUSTOMER_DISABLED'], array_column($userErrors, 'code'));
 
             if (!empty($existing)) {
-                return $this->failure('This email is already registered with our store. Please contact us to update your subscription.');
+                return $this->alreadyRegistered();
             }
 
             return $this->failure();
@@ -373,7 +411,7 @@ class ShopifyService
             $domain,
             $apiVersion,
             $adminToken,
-            'mutation addTags($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { node { id } userErrors { field message } } }',
+            'mutation addTags($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { field message } } }',
             ['id' => $customerGid, 'tags' => $tags],
         );
 
