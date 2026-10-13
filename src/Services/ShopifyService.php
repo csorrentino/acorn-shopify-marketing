@@ -8,13 +8,13 @@ class ShopifyService
 {
     public static function isConnected(): bool
     {
-        return !empty(get_option('shopify_admin_access_token'))
-            || !empty(get_option('shopify_storefront_access_token'));
+        return TokenStore::get(TokenStore::ADMIN_TOKEN) !== ''
+            || TokenStore::get(TokenStore::STOREFRONT_TOKEN) !== '';
     }
 
     public static function getStoreDomain(): string
     {
-        $fromOption = get_option('shopify_store_domain');
+        $fromOption = TokenStore::get(TokenStore::STORE_DOMAIN);
 
         if ($fromOption) {
             return $fromOption;
@@ -81,10 +81,10 @@ class ShopifyService
             return response('Failed to obtain admin token from Shopify.', 500);
         }
 
-        update_option('shopify_admin_access_token', $adminToken);
-        update_option('shopify_store_domain', $shop);
+        TokenStore::put(TokenStore::ADMIN_TOKEN, $adminToken);
+        TokenStore::put(TokenStore::STORE_DOMAIN, $shop);
 
-        if (get_option('shopify_storefront_access_token')) {
+        if (TokenStore::get(TokenStore::STOREFRONT_TOKEN) !== '') {
             return redirect(home_url('/wp-admin/options-general.php?page=shopify-marketing&connected=1'));
         }
 
@@ -94,46 +94,193 @@ class ShopifyService
             return response('Failed to create Storefront API token.', 500);
         }
 
-        update_option('shopify_storefront_access_token', $storefrontToken);
+        TokenStore::put(TokenStore::STOREFRONT_TOKEN, $storefrontToken);
 
         return redirect(home_url('/wp-admin/options-general.php?page=shopify-marketing&connected=1'));
     }
 
+    /**
+     * Subscribe an email to marketing, creating the customer if needed.
+     *
+     * With an Admin token, existing customers are found and subscribed, and
+     * new ones are created with marketing consent. The Admin path needs the
+     * app's protected customer data access (email). If Shopify denies it, the
+     * signup falls back to the Storefront API, which can only create new
+     * customers.
+     */
     public function createCustomer(string $email, array $data = []): array
     {
-        $adminToken = get_option('shopify_admin_access_token');
-        $storefrontToken = get_option('shopify_storefront_access_token');
+        $adminToken = TokenStore::get(TokenStore::ADMIN_TOKEN);
+        $storefrontToken = TokenStore::get(TokenStore::STOREFRONT_TOKEN);
 
-        if (!$adminToken && !$storefrontToken) {
-            error_log('[shopify-marketing] No access token found in wp_options.');
-            return [
-                'success' => false,
-                'message' => 'There was an error submitting the form.',
-            ];
+        if ($adminToken === '' && $storefrontToken === '') {
+            error_log('[shopify-marketing] No access token found. Connect Shopify in Settings → Shopify Marketing.');
+            return $this->failure();
         }
 
         $domain = self::getStoreDomain();
         $apiVersion = config('shopify-marketing.api_version');
+        $tags = array_values(array_unique(array_merge(
+            config('shopify-marketing.tags', []),
+            apply_filters('shopify_marketing_customer_tags', $data['tags'] ?? []),
+        )));
 
-        $token = $storefrontToken ?: $adminToken;
-        $result = $this->createCustomerViaStorefrontGraphQL($email, $data, $domain, $apiVersion, $token);
+        if ($adminToken !== '') {
+            $result = $this->subscribeViaAdmin($email, $data, $tags, $domain, $apiVersion, $adminToken);
 
-        if (!$result['success']) {
-            return $result;
-        }
-
-        if ($adminToken) {
-            $tags = array_merge(
-                config('shopify-marketing.tags', []),
-                apply_filters('shopify_marketing_customer_tags', $data['tags'] ?? []),
-            );
-
-            if (!empty($tags)) {
-                $this->addCustomerTags($result['customerId'], $tags, $domain, $apiVersion, $adminToken);
+            if ($result !== null) {
+                return $result;
             }
         }
 
+        if ($storefrontToken === '') {
+            return $this->failure();
+        }
+
+        $result = $this->createCustomerViaStorefrontGraphQL($email, $data, $domain, $apiVersion, $storefrontToken);
+
+        if ($result['success'] && $adminToken !== '' && !empty($tags) && !empty($result['customerId'])) {
+            $this->addCustomerTags($result['customerId'], $tags, $domain, $apiVersion, $adminToken);
+        }
+
         return $result;
+    }
+
+    /**
+     * Find or create the customer with the Admin API and subscribe them.
+     *
+     * Returns null when the Admin API can't be used (request failed or access
+     * denied), so the caller can fall back to the Storefront API.
+     */
+    private function subscribeViaAdmin(string $email, array $data, array $tags, string $domain, string $apiVersion, string $adminToken): ?array
+    {
+        $lookup = $this->adminGraphQL(
+            $domain,
+            $apiVersion,
+            $adminToken,
+            'query findCustomer($query: String!) { customers(first: 1, query: $query) { edges { node { id } } } }',
+            ['query' => 'email:"' . addcslashes($email, '"\\') . '"'],
+        );
+
+        if ($lookup === null) {
+            return null;
+        }
+
+        $customerId = $lookup['data']['customers']['edges'][0]['node']['id'] ?? null;
+        $consent = [
+            'marketingState' => 'SUBSCRIBED',
+            'marketingOptInLevel' => 'SINGLE_OPT_IN',
+        ];
+
+        if ($customerId) {
+            $update = $this->adminGraphQL(
+                $domain,
+                $apiVersion,
+                $adminToken,
+                'mutation subscribe($input: CustomerEmailMarketingConsentUpdateInput!) { customerEmailMarketingConsentUpdate(input: $input) { customer { id } userErrors { field message } } }',
+                ['input' => ['customerId' => $customerId, 'emailMarketingConsent' => $consent]],
+            );
+
+            if ($update === null) {
+                return null;
+            }
+
+            if (!empty($update['data']['customerEmailMarketingConsentUpdate']['userErrors'])) {
+                error_log('[shopify-marketing] Consent update user errors: ' . json_encode($update['data']['customerEmailMarketingConsentUpdate']['userErrors']));
+                return $this->failure();
+            }
+
+            if (!empty($tags)) {
+                $this->addCustomerTags($customerId, $tags, $domain, $apiVersion, $adminToken);
+            }
+
+            return $this->success();
+        }
+
+        $input = array_filter([
+            'email' => $email,
+            'firstName' => $data['firstName'] ?? '',
+            'lastName' => $data['lastName'] ?? '',
+            'phone' => $data['phone'] ?? '',
+        ]);
+        $input['emailMarketingConsent'] = $consent;
+
+        if (!empty($tags)) {
+            $input['tags'] = $tags;
+        }
+
+        $create = $this->adminGraphQL(
+            $domain,
+            $apiVersion,
+            $adminToken,
+            'mutation customerCreate($input: CustomerInput!) { customerCreate(input: $input) { customer { id } userErrors { field message } } }',
+            ['input' => $input],
+        );
+
+        if ($create === null) {
+            return null;
+        }
+
+        if (!empty($create['data']['customerCreate']['userErrors'])) {
+            error_log('[shopify-marketing] Admin customerCreate user errors: ' . json_encode($create['data']['customerCreate']['userErrors']));
+            return $this->failure();
+        }
+
+        return $this->success($create['data']['customerCreate']['customer']['id'] ?? null);
+    }
+
+    /**
+     * Run an Admin API GraphQL request.
+     *
+     * Returns the decoded body, or null when the request failed or Shopify
+     * returned top-level errors (for example ACCESS_DENIED).
+     */
+    private function adminGraphQL(string $domain, string $apiVersion, string $adminToken, string $query, array $variables): ?array
+    {
+        $response = wp_remote_post("https://{$domain}/admin/api/{$apiVersion}/graphql.json", [
+            'headers' => [
+                'X-Shopify-Access-Token' => $adminToken,
+                'Content-Type' => 'application/json',
+            ],
+            'body' => json_encode(['query' => $query, 'variables' => $variables]),
+            'timeout' => 15,
+        ]);
+
+        if (is_wp_error($response)) {
+            error_log('[shopify-marketing] Admin API request failed: ' . $response->get_error_message());
+            return null;
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if (!is_array($body)) {
+            error_log('[shopify-marketing] Admin API returned HTTP ' . wp_remote_retrieve_response_code($response) . ' with no JSON body.');
+            return null;
+        }
+
+        if (!empty($body['errors'])) {
+            error_log('[shopify-marketing] Admin API errors (check the app has protected customer data access): ' . json_encode($this->sanitizeErrorPayload((array) $body['errors'])));
+            return null;
+        }
+
+        return $body;
+    }
+
+    private function success(?string $customerId = null): array
+    {
+        return [
+            'success' => true,
+            'message' => "You're on the list! Thanks for signing up.",
+            'customerId' => $customerId,
+        ];
+    }
+
+    private function failure(string $message = 'There was an error submitting the form.'): array
+    {
+        return [
+            'success' => false,
+            'message' => $message,
+        ];
     }
 
     private function createCustomerViaStorefrontGraphQL(string $email, array $data, string $domain, string $apiVersion, string $token): array
@@ -199,58 +346,39 @@ class ShopifyService
             ];
         }
 
-        if (!empty($body['data']['customerCreate']['customerUserErrors'])) {
-            error_log('[shopify-marketing] customerCreate user errors: ' . json_encode($body['data']['customerCreate']['customerUserErrors']));
-            return [
-                'success' => false,
-                'message' => 'There was an error submitting the form.',
-            ];
+        $userErrors = $body['data']['customerCreate']['customerUserErrors'] ?? [];
+
+        if (!empty($userErrors)) {
+            error_log('[shopify-marketing] customerCreate user errors: ' . json_encode($userErrors));
+
+            // The Storefront API can't update an existing customer's consent.
+            $existing = array_intersect(['TAKEN', 'CUSTOMER_DISABLED'], array_column($userErrors, 'code'));
+
+            if (!empty($existing)) {
+                return $this->failure('This email is already registered with our store. Please contact us to update your subscription.');
+            }
+
+            return $this->failure();
         }
 
-        return [
-            'success' => true,
-            'message' => "You're on the list! Thanks for signing up.",
-            'customerId' => $body['data']['customerCreate']['customer']['id'] ?? null,
-        ];
+        return $this->success($body['data']['customerCreate']['customer']['id'] ?? null);
     }
 
+    /**
+     * Add tags without replacing the customer's existing tags.
+     */
     private function addCustomerTags(string $customerGid, array $tags, string $domain, string $apiVersion, string $adminToken): void
     {
-        $mutation = <<<'GRAPHQL'
-        mutation customerUpdate($input: CustomerInput!) {
-            customerUpdate(input: $input) {
-                customer { id tags }
-                userErrors { field message }
-            }
-        }
-        GRAPHQL;
+        $body = $this->adminGraphQL(
+            $domain,
+            $apiVersion,
+            $adminToken,
+            'mutation addTags($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { node { id } userErrors { field message } } }',
+            ['id' => $customerGid, 'tags' => $tags],
+        );
 
-        $response = wp_remote_post("https://{$domain}/admin/api/{$apiVersion}/graphql.json", [
-            'headers' => [
-                'X-Shopify-Access-Token' => $adminToken,
-                'Content-Type' => 'application/json',
-            ],
-            'body' => json_encode([
-                'query' => $mutation,
-                'variables' => [
-                    'input' => [
-                        'id' => $customerGid,
-                        'tags' => $tags,
-                    ],
-                ],
-            ]),
-            'timeout' => 15,
-        ]);
-
-        if (is_wp_error($response)) {
-            error_log('[shopify-marketing] Tag update failed: ' . $response->get_error_message());
-            return;
-        }
-
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-
-        if (!empty($body['data']['customerUpdate']['userErrors'])) {
-            error_log('[shopify-marketing] Tag update user errors: ' . json_encode($body['data']['customerUpdate']['userErrors']));
+        if (!empty($body['data']['tagsAdd']['userErrors'])) {
+            error_log('[shopify-marketing] Tag update user errors: ' . json_encode($body['data']['tagsAdd']['userErrors']));
         }
     }
 
@@ -340,8 +468,6 @@ class ShopifyService
 
     public function disconnect(): void
     {
-        delete_option('shopify_admin_access_token');
-        delete_option('shopify_storefront_access_token');
-        delete_option('shopify_store_domain');
+        TokenStore::deleteAll();
     }
 }
