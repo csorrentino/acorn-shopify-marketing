@@ -3,6 +3,7 @@
 namespace Csorrentino\ShopifyMarketing\Admin;
 
 use Csorrentino\ShopifyMarketing\Services\ShopifyService;
+use Csorrentino\ShopifyMarketing\Services\TokenStore;
 
 class OptionsPage
 {
@@ -26,8 +27,8 @@ class OptionsPage
         $authUrl = home_url(config('shopify-marketing.routes.redirect'));
         $restNamespace = config('shopify-marketing.rest_namespace');
 
-        $hasAdminToken = !empty(get_option('shopify_admin_access_token'));
-        $hasStorefrontToken = !empty(get_option('shopify_storefront_access_token'));
+        $hasAdminToken = TokenStore::get(TokenStore::ADMIN_TOKEN) !== '';
+        $hasStorefrontToken = TokenStore::get(TokenStore::STOREFRONT_TOKEN) !== '';
 
         ?>
         <div class="wrap">
