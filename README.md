@@ -4,7 +4,7 @@ Connect your WordPress frontend to Shopify's email marketing tools. This [Roots/
 
 ## Requirements
 
-- PHP 8.2+
+- PHP 8.4+
 - [Roots/Acorn](https://github.com/roots/acorn) 6.x
 - A WordPress setup with `.env` support — [Roots/Bedrock](https://github.com/roots/bedrock) or equivalent
 - A Shopify custom app with Admin API and Storefront API access
