@@ -45,7 +45,7 @@ class ShopifyService
         return redirect()->away($url);
     }
 
-    public function handleCallback(Request $request): \Illuminate\Http\Response
+    public function handleCallback(Request $request): \Symfony\Component\HttpFoundation\Response
     {
         $storedState = get_transient('shopify_oauth_state');
         delete_transient('shopify_oauth_state');
@@ -85,7 +85,7 @@ class ShopifyService
         TokenStore::put(TokenStore::STORE_DOMAIN, $shop);
 
         if (TokenStore::get(TokenStore::STOREFRONT_TOKEN) !== '') {
-            return redirect(home_url('/wp-admin/options-general.php?page=shopify-marketing&connected=1'));
+            return redirect(admin_url('options-general.php?page=shopify-marketing&connected=1'));
         }
 
         $storefrontToken = $this->createStorefrontToken($shop, $adminToken);
@@ -96,7 +96,7 @@ class ShopifyService
 
         TokenStore::put(TokenStore::STOREFRONT_TOKEN, $storefrontToken);
 
-        return redirect(home_url('/wp-admin/options-general.php?page=shopify-marketing&connected=1'));
+        return redirect(admin_url('options-general.php?page=shopify-marketing&connected=1'));
     }
 
     /**
